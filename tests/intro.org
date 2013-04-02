@@ -1,0 +1,4 @@
+  
+  Org-mode is an emacs mode that provides, among other things, an
+  outliner and document authoring system. CL-ORG-MODE is a library for
+  manipulating org-mode files in Common Lisp.
