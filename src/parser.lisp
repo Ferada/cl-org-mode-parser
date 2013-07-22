@@ -303,6 +303,7 @@ tables."
       (iterate
         (with start-of-context = T)
         (with headerp = T)
+        (with oddp = NIL)
         (with previous-blank-line)
         (for line-number from 1)
         (for line = (read-line input NIL))
@@ -330,7 +331,7 @@ tables."
               (setf previous-blank-line NIL)
               (setf start-of-context T)
               (setf headerp NIL)
-              (multiple-value-bind (stars text-start text-end tags-start tags-end tags-list)
+              (multiple-value-bind (raw-stars text-start text-end tags-start tags-end tags-list)
                   (parse-headline line
                                   :end length
                                   :detect-tags-p detect-tags-p
@@ -338,41 +339,46 @@ tables."
                                   :intern-into intern-into
                                   :case-conversion case-conversion)
                 ;; TODO: allow to parse fragments of a document and ignore this
-                (unless (<= stars (1+ level))
-                  ;; TODO: how could this proceed orderly?
-                  ;; generate empty headlines?
-                  ;; TODO: proper exceptions with line number and column number possibly as well
-                  (error "heading level ~D invalid for current level ~D" stars level))
-                (when (<= stars level)
-                  (dotimes (i (1+ (- level stars)))
-                    (end-headline handler)))
-                (setf level stars)
-                (let ((empty-text (eql text-start text-end)))
-                  ;; when preserving whitespace, all whitespaces after the
-                  ;; tags are lost, because we couldn't regenerate the
-                  ;; original even if we added them to the beginning of the
-                  ;; line; we may warn the user though
-                  (when (and (= text-start stars) (not empty-text))
-                    ;; TODO: another continuation to treat as regular line (default?)
-                    (cerror "still accept as headline" "no whitespace between header stars and text in line ~D" line-number))
-                  (when (and tags-start (= text-end tags-start) (not empty-text))
-                    ;; TODO: another continuation to treat as regular text (default?)
-                    (cerror "still accept as tags" "no whitespace between text and tags in line ~D" line-number)))
-                (cond
-                  (preserve-whitespace-p
-                   (start-headline handler line
-                                   (min (1+ stars) text-start)
-                                   (or (and tags-start (min (1+ text-end) tags-start))
-                                       length)))
-                  (T
-                   (start-headline handler line text-start text-end)))
-                (when tags-start
-                  (when preserve-whitespace-p
-                    (when (> (- tags-start text-end) 1)
-                      (warn "some whitespace was lost between text and parsed tags in line ~D" line-number))
-                    (unless (= length tags-end)
-                      (warn "some whitespace was lost after parsed tags in line ~D" line-number)))
-                  (tags handler line tags-start tags-end tags-list))))
+                (unless (or (not oddp) (oddp raw-stars))
+                  (error "odd option specified, yet a level ~D occured in line ~D" raw-stars line-number))
+                (let ((stars (if oddp
+                                 (1+ (/ (1- raw-stars) 2))
+                                 raw-stars)))
+                  (unless (<= stars (+ level 1))
+                    ;; TODO: how could this proceed orderly?
+                    ;; generate empty headlines?
+                    ;; TODO: proper exceptions with line number and column number possibly as well
+                    (error "heading level ~D invalid for current level ~D" stars level))
+                  (when (<= stars level)
+                    (dotimes (i (1+ (- level stars)))
+                      (end-headline handler)))
+                  (setf level stars)
+                  (let ((empty-text (eql text-start text-end)))
+                    ;; when preserving whitespace, all whitespaces after the
+                    ;; tags are lost, because we couldn't regenerate the
+                    ;; original even if we added them to the beginning of the
+                    ;; line; we may warn the user though
+                    (when (and (= text-start stars) (not empty-text))
+                      ;; TODO: another continuation to treat as regular line (default?)
+                      (cerror "still accept as headline" "no whitespace between header stars and text in line ~D" line-number))
+                    (when (and tags-start (= text-end tags-start) (not empty-text))
+                      ;; TODO: another continuation to treat as regular text (default?)
+                      (cerror "still accept as tags" "no whitespace between text and tags in line ~D" line-number)))
+                  (cond
+                    (preserve-whitespace-p
+                     (start-headline handler line
+                                     (min (1+ stars) text-start)
+                                     (or (and tags-start (min (1+ text-end) tags-start))
+                                         length)))
+                    (T
+                     (start-headline handler line text-start text-end)))
+                  (when tags-start
+                    (when preserve-whitespace-p
+                      (when (> (- tags-start text-end) 1)
+                        (warn "some whitespace was lost between text and parsed tags in line ~D" line-number))
+                      (unless (= length tags-end)
+                        (warn "some whitespace was lost after parsed tags in line ~D" line-number)))
+                    (tags handler line tags-start tags-end tags-list)))))
              (T
               (multiple-value-bind (trimmed-start trimmed-end)
                   (string-trim-whitespace line)
