@@ -29,7 +29,10 @@
 (in-package #:cl-org-mode-parser)
 
 (defclass document ()
-  ((nodes
+  ((options
+    :initarg :options
+    :initform NIL)
+   (nodes
     :initarg :nodes
     :initform NIL)))
 
@@ -115,6 +118,9 @@ possibly a LIST of parsed or interned tags, see PARSE-TAGS."))
 (defgeneric end-headline (handler)
   (:documentation "Is called if a headline is finished."))
 
+(defgeneric option (handler name raw-value)
+  (:documentation "Is called when a header option occurs."))
+
 (defclass empty-handler () ()
   (:documentation "Default handler implementation doing nothing.  Useful
 if you're only interested in a subset of the handler events."))
@@ -122,6 +128,7 @@ if you're only interested in a subset of the handler events."))
 (defmethod start-document ((empty-handler empty-handler)))
 (defmethod end-document ((empty-handler empty-handler)))
 (defmethod characters ((empty-handler empty-handler) string start end))
+(defmethod option ((empty-handler empty-handler) name value))
 (defmethod start-headline ((empty-handler empty-handler) string start end))
 (defmethod tags ((empty-handler empty-handler) string tags-start tags-end tags-list))
 (defmethod end-headline ((empty-handler empty-handler)))
@@ -149,6 +156,9 @@ if you're only interested in a subset of the handler events."))
         (append (slot-value (car (slot-value handler 'stack)) 'nodes)
                 (list (subseq string start end)))))
 
+(defmethod option ((handler document-builder) name value)
+  (push (cons name value) (slot-value (lastcar (slot-value handler 'stack)) 'options)))
+
 (defmethod start-headline ((handler document-builder) string start end)
   (push (make-instance 'headline :text (subseq string start end))
         (slot-value handler 'stack)))
@@ -171,17 +181,21 @@ if you're only interested in a subset of the handler events."))
     (pathname (open input))
     (stream input)))
 
+(defun case-convert (case-conversion string)
+  (funcall (ecase case-conversion
+             (:upcase #'string-upcase)
+             (:downcase #'string-downcase)
+             (:capitalize #'string-capitalize)
+             ((NIL) #'identity))
+           string))
+
 (defun parse-tags (string &key
                             (start 0)
                             (end (length string))
                             (intern-into #.(find-package '#:keyword))
                             (case-conversion (and intern-into :upcase)))
   (let ((result (split-sequence #\: string :remove-empty-subseqs T :start start :end end)))
-    (setf result (map-into result (ecase case-conversion
-                                    (:upcase #'string-upcase)
-                                    (:downcase #'string-downcase)
-                                    (:capitalize #'string-capitalize)
-                                    ((NIL) #'identity))
+    (setf result (map-into result (curry #'case-convert case-conversion)
                            result))
     (if intern-into
         (let ((package (or (find-package intern-into)
@@ -189,9 +203,28 @@ if you're only interested in a subset of the handler events."))
           (map-into result (lambda (tag) (intern tag package)) result))
         result)))
 
+(defparameter *option-scanner* (create-scanner "^#\\+([a-zA-Z0-9-_]+): (.*)$"))
+
 (defvar *headline-scanner* (create-scanner "^(\\*+) *(.*?) *$"))
 
 (defvar *headline-scanner-with-tags* (create-scanner "^(\\*+) *(.*?) *(:(?:[@\\w]+:)+)? *$"))
+
+(defun parse-option (string &key
+                              (start 0)
+                              (end (length string))
+                              (intern-into #.(find-package '#:keyword)))
+  (multiple-value-bind (match pieces) (scan-to-strings *option-scanner* string :start start :end end)
+    (when match
+      (let ((name (string-upcase (aref pieces 0)))
+            (value (aref pieces 1)))
+        (when (find #\Space value :test #'char/=)
+          (values
+           (if intern-into
+               (let ((package (or (find-package intern-into)
+                                  (error "can't resolve ~A to an existing package" intern-into))))
+                 (intern name package))
+               name)
+           value))))))
 
 (defun parse-headline (string &key
                                 (start 0)
@@ -269,6 +302,8 @@ tables."
     (let ((level 0))
       (iterate
         (with start-of-context = T)
+        (with headerp = T)
+        (with oddp = NIL)
         (with previous-blank-line)
         (for line-number from 1)
         (for line = (read-line input NIL))
@@ -281,11 +316,22 @@ tables."
                (unless start-of-context
                  (setf previous-blank-line ""))))
           (T
+           (when (and headerp
+                      (char= #\# (char line 0)))
+             (multiple-value-bind (name raw-value) (parse-option line :intern-into intern-into)
+               (when name
+                 (option handler name raw-value)
+                 (switch (name :test #'string-equal)
+                   ('startup
+                    (let ((startup-options (split-sequence #\Space raw-value :remove-empty-subseqs t)))
+                      (when (find 'odd startup-options :test #'string-equal)
+                        (setf oddp t))))))))
            (case (char line 0)
              (#\*
               (setf previous-blank-line NIL)
               (setf start-of-context T)
-              (multiple-value-bind (stars text-start text-end tags-start tags-end tags-list)
+              (setf headerp NIL)
+              (multiple-value-bind (raw-stars text-start text-end tags-start tags-end tags-list)
                   (parse-headline line
                                   :end length
                                   :detect-tags-p detect-tags-p
@@ -293,41 +339,46 @@ tables."
                                   :intern-into intern-into
                                   :case-conversion case-conversion)
                 ;; TODO: allow to parse fragments of a document and ignore this
-                (unless (<= stars (1+ level))
-                  ;; TODO: how could this proceed orderly?
-                  ;; generate empty headlines?
-                  ;; TODO: proper exceptions with line number and column number possibly as well
-                  (error "heading level ~D invalid for current level ~D" stars level))
-                (when (<= stars level)
-                  (dotimes (i (1+ (- level stars)))
-                    (end-headline handler)))
-                (setf level stars)
-                (let ((empty-text (eql text-start text-end)))
-                  ;; when preserving whitespace, all whitespaces after the
-                  ;; tags are lost, because we couldn't regenerate the
-                  ;; original even if we added them to the beginning of the
-                  ;; line; we may warn the user though
-                  (when (and (= text-start stars) (not empty-text))
-                    ;; TODO: another continuation to treat as regular line (default?)
-                    (cerror "still accept as headline" "no whitespace between header stars and text in line ~D" line-number))
-                  (when (and tags-start (= text-end tags-start) (not empty-text))
-                    ;; TODO: another continuation to treat as regular text (default?)
-                    (cerror "still accept as tags" "no whitespace between text and tags in line ~D" line-number)))
-                (cond
-                  (preserve-whitespace-p
-                   (start-headline handler line
-                                   (min (1+ stars) text-start)
-                                   (or (and tags-start (min (1+ text-end) tags-start))
-                                       length)))
-                  (T
-                   (start-headline handler line text-start text-end)))
-                (when tags-start
-                  (when preserve-whitespace-p
-                    (when (> (- tags-start text-end) 1)
-                      (warn "some whitespace was lost between text and parsed tags in line ~D" line-number))
-                    (unless (= length tags-end)
-                      (warn "some whitespace was lost after parsed tags in line ~D" line-number)))
-                  (tags handler line tags-start tags-end tags-list))))
+                (unless (or (not oddp) (oddp raw-stars))
+                  (error "odd option specified, yet a level ~D occured in line ~D" raw-stars line-number))
+                (let ((stars (if oddp
+                                 (1+ (/ (1- raw-stars) 2))
+                                 raw-stars)))
+                  (unless (<= stars (+ level 1))
+                    ;; TODO: how could this proceed orderly?
+                    ;; generate empty headlines?
+                    ;; TODO: proper exceptions with line number and column number possibly as well
+                    (error "heading level ~D invalid for current level ~D" stars level))
+                  (when (<= stars level)
+                    (dotimes (i (1+ (- level stars)))
+                      (end-headline handler)))
+                  (setf level stars)
+                  (let ((empty-text (eql text-start text-end)))
+                    ;; when preserving whitespace, all whitespaces after the
+                    ;; tags are lost, because we couldn't regenerate the
+                    ;; original even if we added them to the beginning of the
+                    ;; line; we may warn the user though
+                    (when (and (= text-start stars) (not empty-text))
+                      ;; TODO: another continuation to treat as regular line (default?)
+                      (cerror "still accept as headline" "no whitespace between header stars and text in line ~D" line-number))
+                    (when (and tags-start (= text-end tags-start) (not empty-text))
+                      ;; TODO: another continuation to treat as regular text (default?)
+                      (cerror "still accept as tags" "no whitespace between text and tags in line ~D" line-number)))
+                  (cond
+                    (preserve-whitespace-p
+                     (start-headline handler line
+                                     (min (1+ stars) text-start)
+                                     (or (and tags-start (min (1+ text-end) tags-start))
+                                         length)))
+                    (T
+                     (start-headline handler line text-start text-end)))
+                  (when tags-start
+                    (when preserve-whitespace-p
+                      (when (> (- tags-start text-end) 1)
+                        (warn "some whitespace was lost between text and parsed tags in line ~D" line-number))
+                      (unless (= length tags-end)
+                        (warn "some whitespace was lost after parsed tags in line ~D" line-number)))
+                    (tags handler line tags-start tags-end tags-list)))))
              (T
               (multiple-value-bind (trimmed-start trimmed-end)
                   (string-trim-whitespace line)
