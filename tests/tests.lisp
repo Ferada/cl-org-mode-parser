@@ -166,3 +166,20 @@ foo
                                                'headline
                                                :text "Second level :some:more:tags: and something afterwards")))))))
     (is (document-equal-p document (parse (test-file "tags") :preserve-whitespace-p T)))))
+
+(def-test odd-startup ()
+  (let ((document (make-instance
+                   'document
+                   :options '((:startup . "odd"))
+                   :nodes (list (make-instance
+                                 'headline
+                                 :text "level 1"
+                                 :nodes (list (make-instance
+                                               'headline
+                                               :text "level 2"
+                                               :nodes (list (make-instance
+                                                             'headline
+                                                             :text "level 3")))))))))
+    (is (document-equal-p document (parse (test-file "odd"))))
+    (setf (slot-value document 'cl-org-mode-parser::options) NIL)
+    (is (not (document-equal-p document (parse (test-file "odd")))))))

@@ -83,11 +83,21 @@
   (and (length= nodes1 nodes2)
        (every #'node-equal-p nodes1 nodes2)))
 
+(defun option-equal-p (option1 option2)
+  (equal option1 option2))
+
+(defun options-equal-p (options1 options2)
+  (and (length= options1 options2)
+       (every #'option-equal-p options1 options2)))
+
 (defun document-equal-p (document1 document2)
   (or (eq document1 document2)
-      (nodes-equal-p
-       (slot-value document1 'nodes)
-       (slot-value document2 'nodes))))
+      (and (nodes-equal-p
+            (slot-value document1 'nodes)
+            (slot-value document2 'nodes))
+           (options-equal-p
+            (slot-value document1 'options)
+            (slot-value document2 'options)))))
 
 (defun make-empty-document (&key (class 'document))
   (make-instance class))
