@@ -14,9 +14,11 @@ interface into e.g. CLOS-based documents and to offer some options with
 regards to parsed elements, interning of tags and similar things.
 
 The parser is currently line- and regex-based, however it might be
-feasible to use a parser generator instead.  Since there probably is no
-single definite grammar (?) and as many documents as possible should be
-parsed (with warnings though), I'll leave it at that for the moment.
+feasible to use a parser generator instead.  For that the syntax
+description at [worg][org-syntax] is canonical and should probably be
+used.
+
+[org-syntax]: http://orgmode.org/worg/dev/org-syntax.html "Org Syntax (draft)"
 
 
 # REPLSHOT
@@ -48,4 +50,3 @@ toggle this behaviour).
 - include line/column information in errors
 - proper subclasses for (continuable) errors
 - parse a lot more special syntax (tables, drawers, ...)
-- integrate the fiveam tests into the ASDF definition
