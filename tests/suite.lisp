@@ -1,4 +1,4 @@
-;;; -*- mode: lisp; syntax: common-lisp; coding: utf-8-unix; package: cl-user; -*-
+;;; -*- mode: lisp; syntax: common-lisp; coding: utf-8-unix; package: cl-org-mode-parser-tests; -*-
 
 ;; Copyright (c) 2013, Olof-Joachim Frahm
 ;; All rights reserved.
@@ -26,35 +26,6 @@
 ;; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 ;; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-(in-package #:cl-user)
+(in-package #:cl-org-mode-parser-tests)
 
-(asdf:defsystem #:cl-org-mode-parser
-  :description "Parsing org-mode files."
-  :long-description "Parsing org-mode files with a SAX-like interface."
-  :author "Olof-Joachim Frahm <olof@macrolet.net>"
-  :license "Simplified BSD License"
-  :depends-on (#:anaphora
-               #:alexandria
-               #:logv
-               #:iterate
-               #:cl-ppcre
-               #:split-sequence)
-  :in-order-to ((asdf:test-op (asdf:load-op #:cl-org-mode-parser-tests)))
-  :perform (asdf:test-op :after (op c)
-             (funcall (find-symbol (symbol-name '#:run!) '#:fiveam)
-                      (find-symbol (symbol-name '#:cl-org-mode-parser) '#:cl-org-mode-parser-tests)))
-  :serial T
-  :components ((:module "src"
-                :components
-                ((:file "package")
-                 (:file "parser")))))
-
-(asdf:defsystem #:cl-org-mode-parser-tests
-  :depends-on (#:cl-org-mode-parser #:fiveam)
-  :serial T
-  :components ((:module "tests"
-                :components
-                ((:file "package")
-                 (:file "files")
-                 (:file "suite")
-                 (:file "tests")))))
+(def-suite cl-org-mode-parser)

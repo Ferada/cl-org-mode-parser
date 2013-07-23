@@ -28,6 +28,8 @@
 
 (in-package #:cl-org-mode-parser-tests)
 
+(in-suite cl-org-mode-parser)
+
 (def-test empty-string ()
   (is (document-equal-p (make-empty-document) (parse ""))))
 
@@ -117,7 +119,7 @@ foo
                                   :nodes (list (make-instance
                                                 'headline
                                                 :text "Another second level")))))))
-    (is (document-equal-p document (parse #P"headlines.org")))))
+    (is (document-equal-p document (parse (test-file "headlines"))))))
 
 (def-test headlines.preserve-whitespace ()
   (let ((document (make-instance
@@ -136,10 +138,10 @@ foo
                                   :nodes (list (make-instance
                                                 'headline
                                                 :text "Another second level ")))))))
-    (is (document-equal-p document (parse #P"headlines.org" :preserve-whitespace-p T)))))
+    (is (document-equal-p document (parse (test-file "headlines") :preserve-whitespace-p T)))))
 
 (def-test invalid-headlines ()
-  (signals simple-error (parse #P"invalid-headlines.org")))
+  (signals simple-error (parse (test-file "invalid-headlines.org"))))
 
 (def-test tags ()
   (let ((document (make-instance
@@ -151,7 +153,7 @@ foo
                                  :nodes (list (make-instance
                                                'headline
                                                :text "Second level :some:more:tags: and something afterwards")))))))
-    (is (document-equal-p document (parse #P"tags.org")))))
+    (is (document-equal-p document (parse (test-file "tags"))))))
 
 (def-test tags.preserve-whitespace ()
   (let ((document (make-instance
@@ -163,4 +165,4 @@ foo
                                  :nodes (list (make-instance
                                                'headline
                                                :text "Second level :some:more:tags: and something afterwards")))))))
-    (is (document-equal-p document (parse #P"tags.org" :preserve-whitespace-p T)))))
+    (is (document-equal-p document (parse (test-file "tags") :preserve-whitespace-p T)))))
